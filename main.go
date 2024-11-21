@@ -8,8 +8,9 @@ import (
 	"syscall"
 
 	alog "github.com/apex/log"
+	"github.com/asama-ai/redfish_exporter/collector"
+	"github.com/asama-ai/redfish_exporter/vault"
 	kitlog "github.com/go-kit/log"
-	"github.com/jenningsloy318/redfish_exporter/collector"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
@@ -35,10 +36,12 @@ var (
 		"web.listen-address",
 		"Address to listen on for web interface and telemetry.",
 	).Default(":9610").String()
-	sc = &SafeConfig{
+	vaultType = vault.AddFlags()
+	sc        = &SafeConfig{
 		C: &Config{},
 	}
-	reloadCh chan chan error
+	reloadCh    chan chan error
+	VaultClient vault.VaultClient
 )
 
 func init() {
@@ -48,6 +51,12 @@ func init() {
 
 	hostname, _ := os.Hostname()
 	rootLoggerCtx.Infof("version %s, build reversion %s, build branch %s, build at %s on host %s", Version, BuildRevision, BuildBranch, BuildTime, hostname)
+	var err error
+	VaultClient, err = vault.NewVaultClient(*vaultType)
+
+	if err != nil {
+		rootLoggerCtx.Infof("Vault not found or Error creating vault client")
+	}
 }
 
 func reloadHandler(configLoggerCtx *alog.Entry) http.HandlerFunc {
@@ -109,7 +118,11 @@ func metricsHandler() http.HandlerFunc {
 				return
 			}
 		}
-
+		if hostConfig == nil {
+			if hostConfig.Username, hostConfig.Password, err = VaultClient.GetCredentials(target); err != nil {
+				targetLoggerCtx.WithError(err).Error("error getting credentails from vault")
+			}
+		}
 		// Always falling back to single host config when group config failed.
 		if hostConfig == nil {
 			if hostConfig, err = sc.HostConfigForTarget(target); err != nil {
@@ -140,6 +153,7 @@ func main() {
 	configLoggerCtx := rootLoggerCtx.WithField("config", *configFile)
 	configLoggerCtx.Info("starting app")
 	// load config  first time
+
 	if err := sc.ReloadConfig(*configFile); err != nil {
 		configLoggerCtx.WithError(err).Error("error parsing config file")
 		panic(err)
