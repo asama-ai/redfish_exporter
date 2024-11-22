@@ -2,12 +2,11 @@ package vault
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 
-	"github.com/alecthomas/kingpin/v2"
 	"github.com/hashicorp/vault/api"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
 // HashiCorpVaultClient implements the VaultClient interface for HashiCorp Vault.
@@ -18,17 +17,17 @@ type HashiCorpVaultClient struct {
 var secretPath *string
 
 // Adds the Hashicorp Flags
-func addHashiCorpFlags() {
-	vaultAddress = kingpin.Flag("ip", "IP address of the Vault").Default("127.0.0.1:8200").String()
-	tokenFile = kingpin.Flag("token-file", "Path to the file containing the Vault token").Default("./token.txt").String()
-	secretPath = kingpin.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds").String()
+func addHashiCorpFlags(a *kingpin.Application) {
+	vaultAddress = a.Flag("ip", "IP address of the Vault").Default("http://127.0.0.1:8200").String()
+	tokenFile = a.Flag("token-file", "Path to the file containing the Vault token").String()
+	secretPath = a.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds/data/").String()
 }
 
 // NewHashiCorpVaultClient creates a new Vault client for HashiCorp Vault.
 func NewHashiCorpVaultClient(vaultAddress, tokenFile string) (VaultClient, error) {
 
-	if vaultAddress == "" || tokenFile == "" {
-		return nil, errors.New("both --ip and --token-file are required when using hashicorp vault")
+	if tokenFile == "" {
+		return nil, fmt.Errorf("--token-file is required when using hashicorp vault")
 	}
 
 	// Read the token from the specified file
@@ -55,7 +54,6 @@ func NewHashiCorpVaultClient(vaultAddress, tokenFile string) (VaultClient, error
 // GetCredentials retrieves credentials from HashiCorp Vault.
 func (h *HashiCorpVaultClient) GetCredentials(target string) (string, string, error) {
 	vaultPath := fmt.Sprint(*secretPath + target)
-
 	secret, err := h.client.Logical().Read(vaultPath)
 	if err != nil {
 		return "", "", err
@@ -77,6 +75,5 @@ func (h *HashiCorpVaultClient) GetCredentials(target string) (string, string, er
 	if !ok {
 		return "", "", fmt.Errorf("password not found for target %s", target)
 	}
-
 	return username, password, nil
 }

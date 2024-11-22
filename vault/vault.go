@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/alecthomas/kingpin/v2"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
 	vaultAddress *string
 	tokenFile    *string
+	vaultType    *string
 )
 
-func AddFlags() *string {
-	vaultType := kingpin.Flag("vault.type", "Specify the type of vault (default: none).").Enum(
+func AddFlags(a *kingpin.Application) {
+	vaultType = (a.Flag("vault.type", "Specify the type of vault (default: none).").Required().Enum(
 		"hashiCorp",
 		"aws",
 		"azure",
@@ -22,16 +23,19 @@ func AddFlags() *string {
 		"lastPass",
 		"bitwarden",
 		"keePass",
-		"thycotic")
-	addHashiCorpFlags()
+		"thycotic"))
+	addHashiCorpFlags(a)
 	// Add for other vaults (e.g., AWS, GCP)
 
-	return vaultType
 }
 
 // VaultClient defines the interface for interacting with a vault to get credentials.
 type VaultClient interface {
 	GetCredentials(target string) (username string, password string, err error)
+}
+
+func GetType() *string {
+	return vaultType
 }
 
 // NewVaultClient is a factory function that returns the appropriate VaultClient.

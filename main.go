@@ -36,12 +36,12 @@ var (
 		"web.listen-address",
 		"Address to listen on for web interface and telemetry.",
 	).Default(":9610").String()
-	vaultType = vault.AddFlags()
-	sc        = &SafeConfig{
+	sc = &SafeConfig{
 		C: &Config{},
 	}
 	reloadCh    chan chan error
 	VaultClient vault.VaultClient
+	vaultType   string
 )
 
 func init() {
@@ -51,12 +51,6 @@ func init() {
 
 	hostname, _ := os.Hostname()
 	rootLoggerCtx.Infof("version %s, build reversion %s, build branch %s, build at %s on host %s", Version, BuildRevision, BuildBranch, BuildTime, hostname)
-	var err error
-	VaultClient, err = vault.NewVaultClient(*vaultType)
-
-	if err != nil {
-		rootLoggerCtx.Infof("Vault not found or Error creating vault client")
-	}
 }
 
 func reloadHandler(configLoggerCtx *alog.Entry) http.HandlerFunc {
@@ -118,9 +112,14 @@ func metricsHandler() http.HandlerFunc {
 				return
 			}
 		}
-		if hostConfig == nil {
-			if hostConfig.Username, hostConfig.Password, err = VaultClient.GetCredentials(target); err != nil {
+		if hostConfig == nil && vaultType != "" {
+			username, password, err := VaultClient.GetCredentials(target)
+			if err != nil {
 				targetLoggerCtx.WithError(err).Error("error getting credentails from vault")
+			}
+			hostConfig = &HostConfig{
+				Username: username,
+				Password: password,
 			}
 		}
 		// Always falling back to single host config when group config failed.
@@ -145,11 +144,13 @@ func metricsHandler() http.HandlerFunc {
 }
 
 func main() {
+
 	log.AddFlags(kingpin.CommandLine)
 	kingpin.HelpFlag.Short('h')
+	vault.AddFlags(kingpin.CommandLine)
 	kingpin.Parse()
-	kitlogger := kitlog.NewLogfmtLogger(os.Stderr)
 
+	kitlogger := kitlog.NewLogfmtLogger(os.Stderr)
 	configLoggerCtx := rootLoggerCtx.WithField("config", *configFile)
 	configLoggerCtx.Info("starting app")
 	// load config  first time
@@ -162,6 +163,17 @@ func main() {
 	configLoggerCtx.WithField("operation", "sc.ReloadConfig").Info("config file loaded")
 
 	SetLogLevel()
+
+	// create a vault client
+
+	var err error
+	vaultType = *vault.GetType()
+	if vaultType != "" {
+		VaultClient, err = vault.NewVaultClient(vaultType)
+		if err != nil {
+			rootLoggerCtx.Fatal(err.Error())
+		}
+	}
 
 	// load config in background to watch for config changes
 	hup := make(chan os.Signal, 1)
@@ -213,7 +225,7 @@ func main() {
 
 	rootLoggerCtx.Infof("app started. listening on %s", *listenAddress)
 	srv := &http.Server{Addr: *listenAddress}
-	err := web.ListenAndServe(srv, *webConfig, kitlogger)
+	err = web.ListenAndServe(srv, *webConfig, kitlogger)
 	if err != nil {
 		log.Fatal(err)
 	}
