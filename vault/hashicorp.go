@@ -14,7 +14,11 @@ type HashiCorpVaultClient struct {
 	client *api.Client
 }
 
-var secretPath *string
+var (
+	secretPath *string
+	tokenFile  *string
+	vaultType  *string
+)
 
 // Adds the Hashicorp Flags
 func addHashiCorpFlags(a *kingpin.Application) {

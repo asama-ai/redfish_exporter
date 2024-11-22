@@ -2,16 +2,11 @@ package vault
 
 import (
 	"fmt"
-	"log"
 
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
-var (
-	vaultAddress *string
-	tokenFile    *string
-	vaultType    *string
-)
+var vaultAddress *string
 
 func AddFlags(a *kingpin.Application) {
 	vaultType = (a.Flag("vault.type", "Specify the type of vault (default: none).").Required().Enum(
@@ -46,12 +41,5 @@ func NewVaultClient(VaultType string) (VaultClient, error) {
 	// Add cases for other vaults (e.g., AWS, GCP)
 	default:
 		return nil, fmt.Errorf("unsupported vault type: %s", VaultType)
-	}
-}
-
-// LogError is a utility function for logging errors.
-func LogError(err error) {
-	if err != nil {
-		log.Printf("Error: %v", err)
 	}
 }
