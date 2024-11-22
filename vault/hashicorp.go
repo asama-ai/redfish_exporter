@@ -62,9 +62,13 @@ func (h *HashiCorpVaultClient) GetCredentials(target string) (string, string, er
 	if secret == nil || secret.Data == nil {
 		return "", "", fmt.Errorf("no data found for target %s", target)
 	}
-	data, ok := secret.Data["data"].(map[string]interface{})
+	dataInterface, ok := secret.Data["data"]
 	if !ok {
 		return "", "", fmt.Errorf("data not found for target %s", target)
+	}
+	data, ok := dataInterface.(map[string]interface{})
+	if !ok {
+		return "", "", fmt.Errorf("unexpected data format for target %s", target)
 	}
 	username, ok := data["username"].(string)
 	if !ok {
