@@ -19,9 +19,9 @@ var secretPath *string
 
 // Adds the Hashicorp Flags
 func addHashiCorpFlags() {
-	vaultAddress = kingpin.Flag("ip", "IP address of the Vault").String()
-	tokenFile = kingpin.Flag("token-file", "Path to the file containing the Vault token").String()
-	secretPath = kingpin.Flag("secret-path", "Path to the secret in the Vault").String()
+	vaultAddress = kingpin.Flag("ip", "IP address of the Vault").Default("127.0.0.1:8200").String()
+	tokenFile = kingpin.Flag("token-file", "Path to the file containing the Vault token").Default("./token.txt").String()
+	secretPath = kingpin.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds").String()
 }
 
 // NewHashiCorpVaultClient creates a new Vault client for HashiCorp Vault.
