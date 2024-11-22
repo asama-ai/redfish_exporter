@@ -23,7 +23,7 @@ jobs:
       - name: Build Binary
         run: |
           go mod tidy
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o redfish-exporter ./cmd/server/main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o redfish-exporter 
 
       # Step 4: Set up Docker Buildx (for better caching)
       - name: Set up Docker Buildx
