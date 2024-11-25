@@ -13,7 +13,6 @@ require (
 	github.com/prometheus/common v0.26.0
 	github.com/prometheus/exporter-toolkit v0.5.0
 	github.com/stmcginnis/gofish v0.14.0
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -56,4 +55,5 @@ require (
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1 // indirect
 	google.golang.org/appengine v1.4.0 // indirect
 	google.golang.org/protobuf v1.26.0-rc.1 // indirect
+	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 )

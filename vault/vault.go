@@ -32,6 +32,10 @@ type VaultClient interface {
 	GetCredentials(target string) (username string, password string, err error)
 }
 
+func GetVaultType() string {
+	return *vaultType
+}
+
 // NewVaultClient is a factory function that returns the appropriate VaultClient.
 func NewVaultClient() (VaultClient, error) {
 	switch *vaultType {
