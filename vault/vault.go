@@ -6,7 +6,10 @@ import (
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
-var vaultAddress *string
+var (
+	vaultAddress *string
+	vaultType    *string
+)
 
 func AddFlags(a *kingpin.Application) {
 	vaultType = (a.Flag("vault.type", "Specify the type of vault (default: none).").Required().Enum(
@@ -29,17 +32,13 @@ type VaultClient interface {
 	GetCredentials(target string) (username string, password string, err error)
 }
 
-func GetType() *string {
-	return vaultType
-}
-
 // NewVaultClient is a factory function that returns the appropriate VaultClient.
-func NewVaultClient(VaultType string) (VaultClient, error) {
-	switch VaultType {
+func NewVaultClient() (VaultClient, error) {
+	switch *vaultType {
 	case "hashiCorp":
 		return NewHashiCorpVaultClient(*vaultAddress, *tokenFile)
 	// Add cases for other vaults (e.g., AWS, GCP)
 	default:
-		return nil, fmt.Errorf("unsupported vault type: %s", VaultType)
+		return nil, fmt.Errorf("unsupported vault type: %s", *vaultType)
 	}
 }

@@ -167,12 +167,10 @@ func main() {
 	// create a vault client
 
 	var err error
-	vaultType = *vault.GetType()
-	if vaultType != "" {
-		VaultClient, err = vault.NewVaultClient(vaultType)
-		if err != nil {
-			rootLoggerCtx.Fatal(err.Error())
-		}
+
+	VaultClient, err = vault.NewVaultClient()
+	if err != nil {
+		rootLoggerCtx.Fatal(err.Error())
 	}
 
 	// load config in background to watch for config changes

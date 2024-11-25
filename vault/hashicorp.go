@@ -17,7 +17,6 @@ type HashiCorpVaultClient struct {
 var (
 	secretPath *string
 	tokenFile  *string
-	vaultType  *string
 )
 
 // Adds the Hashicorp Flags
@@ -42,6 +41,9 @@ func NewHashiCorpVaultClient(vaultAddress, tokenFile string) (VaultClient, error
 
 	// Convert byte slices to strings and trim whitespace
 	vaultToken := string(bytes.TrimSpace(token))
+	if vaultToken == "" {
+		return nil, fmt.Errorf("vault token is empty; please ensure the token file contains a valid token")
+	}
 
 	config := api.DefaultConfig()
 	config.Address = vaultAddress
