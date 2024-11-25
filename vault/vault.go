@@ -41,6 +41,8 @@ func NewVaultClient() (VaultClient, error) {
 	switch *vaultType {
 	case "hashiCorp":
 		return NewHashiCorpVaultClient(*vaultAddress, *tokenFile)
+	case "AWS", "Azure", "Google", "CyberArk", "LastPass", "Bitwarden", "KeePass", "Thycotic":
+		return nil, fmt.Errorf("vault type %q support not implemented yet", *vaultType)
 	// Add cases for other vaults (e.g., AWS, GCP)
 	default:
 		return nil, fmt.Errorf("unsupported vault type: %s", *vaultType)
