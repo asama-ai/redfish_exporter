@@ -12,7 +12,7 @@ var (
 )
 
 func AddFlags(a *kingpin.Application) {
-	vaultType = (a.Flag("vault.type", "Specify the type of vault (default: none).").Required().Enum(
+	vaultType = (a.Flag("vault.type", "Specify the type of vault (default: none).").Enum(
 		"hashiCorp",
 		"aws",
 		"azure",
