@@ -44,4 +44,4 @@ COPY redfish_exporter* ./
 
 EXPOSE 9610
 
-CMD [ "./redfish_exporter" ]
+ENTRYPOINT [ "./redfish_exporter" ]

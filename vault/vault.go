@@ -8,12 +8,11 @@ import (
 )
 
 var (
-	vaultType            string
-	HashiCorpVaultClient *hashicorp.HashiCorpVaultClient
+	vaultType *string
 )
 
 func AddFlags(a *kingpin.Application) {
-	vaultType = *a.Flag("vault.type", "Specify the type of vault (default: none).").Enum(
+	vaultType = a.Flag("vault.type", "Specify the type of vault (default: none).").Enum(
 		"hashiCorp",
 		"aws",
 		"azure",
@@ -29,14 +28,14 @@ func AddFlags(a *kingpin.Application) {
 
 }
 func GetCredentials(target string) (username string, password string, err error) {
-	switch vaultType {
+	switch *vaultType {
 	case "hashiCorp":
 		return hashicorp.GetCredentials(target)
 	case "AWS", "Azure", "Google", "CyberArk", "LastPass", "Bitwarden", "KeePass", "Thycotic":
-		return "", "", fmt.Errorf("vault type %q support not implemented yet", vaultType)
+		return "", "", fmt.Errorf("vault type %q support not implemented yet", *vaultType)
 	// Add cases for other vaults (e.g., AWS, GCP)
 	default:
-		return "", "", fmt.Errorf("unsupported vault type: %s", vaultType)
+		return "", "", fmt.Errorf("unsupported vault type: %s", *vaultType)
 	}
 }
 
@@ -46,18 +45,22 @@ type VaultClient interface {
 }
 
 func GetVaultType() string {
-	return vaultType
+	if vaultType == nil {
+		return ""
+	}
+
+	return *vaultType
 }
 
 // NewVaultClient is a factory function that returns the appropriate VaultClient.
-func NewVaultClient() error {
-	switch vaultType {
+func InitClient() error {
+	switch *vaultType {
 	case "hashiCorp":
 		return hashicorp.NewHashiCorpVaultClient()
 	case "AWS", "Azure", "Google", "CyberArk", "LastPass", "Bitwarden", "KeePass", "Thycotic":
-		return fmt.Errorf("vault type %q support not implemented yet", vaultType)
+		return fmt.Errorf("vault type %q support not implemented yet", *vaultType)
 	// Add cases for other vaults (e.g., AWS, GCP)
 	default:
-		return fmt.Errorf("unsupported vault type: %s", vaultType)
+		return fmt.Errorf("unsupported vault type: %s", *vaultType)
 	}
 }

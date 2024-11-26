@@ -166,7 +166,7 @@ func main() {
 	var err error
 	vaultType = vault.GetVaultType()
 	if vaultType != "" {
-		err = vault.NewVaultClient()
+		err = vault.InitClient()
 		if err != nil {
 			rootLoggerCtx.Fatal(err.Error())
 		}

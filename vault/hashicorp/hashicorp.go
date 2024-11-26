@@ -14,27 +14,27 @@ var HashiCorpClient HashiCorpVaultClient
 // HashiCorpVaultClient implements the VaultClient interface for HashiCorp Vault.
 type HashiCorpVaultClient struct {
 	client       *api.Client
-	secretPath   string
-	tokenFile    string
-	vaultAddress string
+	secretPath   *string
+	tokenFile    *string
+	vaultAddress *string
 }
 
 // Adds the Hashicorp Flags
 func AddFlags(a *kingpin.Application) {
-	HashiCorpClient.vaultAddress = *a.Flag("ip", "IP address of tCliente Vault").Default("http://127.0.0.1:8200").String()
-	HashiCorpClient.tokenFile = *a.Flag("token-file", "Path to the file containing the Vault token").String()
-	HashiCorpClient.secretPath = *a.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds/data/").String()
+	HashiCorpClient.vaultAddress = a.Flag("ip", "IP address of tCliente Vault").Default("http://127.0.0.1:8200").String()
+	HashiCorpClient.tokenFile = a.Flag("token-file", "Path to the file containing the Vault token").String()
+	HashiCorpClient.secretPath = a.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds/data/").String()
 }
 
 // NewHashiCorpVaultClient creates a new Vault client for HashiCorp Vault.
 func NewHashiCorpVaultClient() error {
 
-	if HashiCorpClient.tokenFile == "" {
+	if HashiCorpClient.tokenFile == nil {
 		return fmt.Errorf("--token-file is required when using hashicorp vault")
 	}
 
 	// Read the token from the specified file
-	token, err := os.ReadFile(HashiCorpClient.tokenFile)
+	token, err := os.ReadFile(*HashiCorpClient.tokenFile)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func NewHashiCorpVaultClient() error {
 	}
 
 	config := api.DefaultConfig()
-	config.Address = HashiCorpClient.vaultAddress
+	config.Address = *HashiCorpClient.vaultAddress
 
 	client, err := api.NewClient(config)
 	if err != nil {
@@ -54,13 +54,17 @@ func NewHashiCorpVaultClient() error {
 	}
 
 	client.SetToken(vaultToken)
+	_, err = client.Auth().Token().LookupSelf()
+	if err != nil {
+		return fmt.Errorf("invalid vault token: %v", err)
+	}
 	HashiCorpClient.client = client
 	return nil
 }
 
 // GetCredentials retrieves credentials from HashiCorp Vault.
 func GetCredentials(target string) (string, string, error) {
-	vaultPath := fmt.Sprint(HashiCorpClient.secretPath + target)
+	vaultPath := fmt.Sprint(*HashiCorpClient.secretPath + target)
 	secret, err := HashiCorpClient.client.Logical().Read(vaultPath)
 	if err != nil {
 		return "", "", err
