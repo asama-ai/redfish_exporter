@@ -113,7 +113,7 @@ func metricsHandler() http.HandlerFunc {
 			}
 		}
 		if hostConfig == nil && vaultType != "" {
-			username, password, err := VaultClient.GetCredentials(target)
+			username, password, err := vault.GetCredentials(target)
 			if err != nil {
 				targetLoggerCtx.WithError(err).Error("error getting credentails from vault")
 			}
@@ -147,6 +147,7 @@ func main() {
 
 	log.AddFlags(kingpin.CommandLine)
 	kingpin.HelpFlag.Short('h')
+
 	vault.AddFlags(kingpin.CommandLine)
 	kingpin.Parse()
 
@@ -162,18 +163,16 @@ func main() {
 
 	configLoggerCtx.WithField("operation", "sc.ReloadConfig").Info("config file loaded")
 
-	SetLogLevel()
-
-	// create a vault client
-
 	var err error
 	vaultType = vault.GetVaultType()
 	if vaultType != "" {
-		VaultClient, err = vault.NewVaultClient()
+		err = vault.NewVaultClient()
 		if err != nil {
 			rootLoggerCtx.Fatal(err.Error())
 		}
 	}
+
+	SetLogLevel()
 
 	// load config in background to watch for config changes
 	hup := make(chan os.Signal, 1)
