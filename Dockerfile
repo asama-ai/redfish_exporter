@@ -1,25 +1,47 @@
-FROM golang:rc-bullseye AS builder
+# Build stage
+FROM golang:1.23.2-alpine AS builder
 
-LABEL maintainer="Jennings Liu <jenningsloy318@gmail.com>"
+WORKDIR /app
 
-ARG ARCH=amd64
+# Install build dependencies
+RUN apk add --no-cache git
 
-ENV GOROOT /usr/local/go
-ENV GOPATH /go
-ENV PATH "$GOROOT/bin:$GOPATH/bin:$PATH"
-ENV GO_VERSION 1.15.2
-ENV GO111MODULE=on 
+# Copy go.mod first
+COPY go.mod ./
 
+# Download dependencies and generate go.sum
+RUN go mod download && go mod verify
 
-# Build dependencies
-RUN mkdir -p /go/src/github.com/ && \
-    git clone https://github.com/jenningsloy318/redfish_exporter /go/src/github.com/jenningsloy318/redfish_exporter && \
-    cd /go/src/github.com/jenningsloy318/redfish_exporter && \
-    make build
+# Copy the rest of the source code
+COPY . .
 
-FROM golang:rc-bullseye
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o redfish_exporter 
 
-COPY --from=builder /go/src/github.com/jenningsloy318/redfish_exporter/build/redfish_exporter /usr/local/bin/redfish_exporter
-RUN mkdir /etc/prometheus
-COPY config.yml.example /etc/prometheus/redfish_exporter.yml
-CMD ["/usr/local/bin/redfish_exporter","--config.file","/etc/prometheus/redfish_exporter.yml"]
+# Final stage
+FROM alpine:3.19
+
+WORKDIR /app
+
+# Install runtime dependencies and create non-root user
+RUN apk add --no-cache ca-certificates tzdata && \
+    adduser -D -H -h /app redfish_exporter
+
+# Copy the binary from builder
+COPY --from=builder /app/redfish_exporter .
+
+# Set ownership to non-root user
+RUN chown -R redfish_exporter:redfish_exporter /app
+
+# Use non-root user
+USER redfish_exporter
+
+# COPY *.go ./
+COPY *.yml ./
+COPY redfish_exporter* ./
+
+# RUN go build .
+
+EXPOSE 9610
+
+ENTRYPOINT [ "./redfish_exporter" ]
