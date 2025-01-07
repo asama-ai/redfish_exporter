@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"crypto/tls"
+	"net/http"
+
 	"github.com/apex/log"
 	"github.com/prometheus/client_golang/prometheus"
 	gofish "github.com/stmcginnis/gofish"
@@ -102,15 +105,26 @@ func (r *RedfishCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func newRedfishClient(host string, username string, password string) (*gofish.APIClient, error) {
-
 	url := fmt.Sprintf("https://%s", host)
+
+	// Create transport with proxy
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+		Proxy: http.ProxyFromEnvironment, // Uses HTTP_PROXY, HTTPS_PROXY env vars
+	}
 
 	config := gofish.ClientConfig{
 		Endpoint: url,
 		Username: username,
 		Password: password,
 		Insecure: true,
+		HTTPClient: &http.Client{
+			Transport: transport,
+		},
 	}
+
 	redfishClient, err := gofish.Connect(config)
 	if err != nil {
 		return nil, err
