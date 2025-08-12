@@ -1,7 +1,6 @@
 package hashicorp
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 
@@ -15,34 +14,34 @@ var HashiCorpClient HashiCorpVaultClient
 type HashiCorpVaultClient struct {
 	client       *api.Client
 	secretPath   *string
-	tokenFile    *string
+	token        *string
 	vaultAddress *string
 }
 
 // Adds the Hashicorp Flags
 func AddFlags(a *kingpin.Application) {
 	HashiCorpClient.vaultAddress = a.Flag("ip", "IP address of tCliente Vault").Default("http://127.0.0.1:8200").String()
-	HashiCorpClient.tokenFile = a.Flag("token-file", "Path to the file containing the Vault token").String()
+	HashiCorpClient.token = a.Flag("token", "Vault token (can also be set via VAULT_TOKEN environment variable)").String()
 	HashiCorpClient.secretPath = a.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds/data/").String()
 }
 
 // NewHashiCorpVaultClient creates a new Vault client for HashiCorp Vault.
 func NewHashiCorpVaultClient() error {
+	var vaultToken string
 
-	if HashiCorpClient.tokenFile == nil {
-		return fmt.Errorf("--token-file is required when using hashicorp vault")
+	// Priority order: command line flag -> environment variable
+	if HashiCorpClient.token != nil && *HashiCorpClient.token != "" {
+		// Use token from command line flag
+		vaultToken = *HashiCorpClient.token
+	} else if envToken := os.Getenv("VAULT_TOKEN"); envToken != "" {
+		// Use token from environment variable
+		vaultToken = envToken
+	} else {
+		return fmt.Errorf("vault token is required: provide via --token flag or VAULT_TOKEN environment variable")
 	}
 
-	// Read the token from the specified file
-	token, err := os.ReadFile(*HashiCorpClient.tokenFile)
-	if err != nil {
-		return err
-	}
-
-	// Convert byte slices to strings and trim whitespace
-	vaultToken := string(bytes.TrimSpace(token))
 	if vaultToken == "" {
-		return fmt.Errorf("vault token is empty; please ensure the token file contains a valid token")
+		return fmt.Errorf("vault token is empty; please ensure a valid token is provided")
 	}
 
 	config := api.DefaultConfig()
