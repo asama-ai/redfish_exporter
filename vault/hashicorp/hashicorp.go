@@ -1,7 +1,9 @@
 package hashicorp
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/hashicorp/vault/api"
@@ -10,31 +12,28 @@ import (
 
 var HashiCorpClient HashiCorpVaultClient
 
-// HashiCorpVaultClient implements the VaultClient interface for HashiCorp Vault.
 type HashiCorpVaultClient struct {
-	client       *api.Client
-	secretPath   *string
-	token        *string
-	vaultAddress *string
+	client             *api.Client
+	secretPath         *string
+	token              *string
+	vaultAddress       *string
+	insecureSkipVerify *bool
 }
 
-// Adds the Hashicorp Flags
 func AddFlags(a *kingpin.Application) {
-	HashiCorpClient.vaultAddress = a.Flag("ip", "IP address of tCliente Vault").Default("http://127.0.0.1:8200").String()
+	HashiCorpClient.vaultAddress = a.Flag("ip", "IP address of the Vault").Default("http://127.0.0.1:8200").String()
 	HashiCorpClient.token = a.Flag("token", "Vault token (can also be set via VAULT_TOKEN environment variable)").String()
 	HashiCorpClient.secretPath = a.Flag("secret-path", "Path to the secret in the Vault").Default("redfish/creds/data/").String()
+	HashiCorpClient.insecureSkipVerify = a.Flag("insecure-skip-tls-verify", "Disable TLS verification (insecure, use for testing only)").Bool()
 }
 
-// NewHashiCorpVaultClient creates a new Vault client for HashiCorp Vault.
 func NewHashiCorpVaultClient() error {
 	var vaultToken string
 
 	// Priority order: command line flag -> environment variable
 	if HashiCorpClient.token != nil && *HashiCorpClient.token != "" {
-		// Use token from command line flag
 		vaultToken = *HashiCorpClient.token
 	} else if envToken := os.Getenv("VAULT_TOKEN"); envToken != "" {
-		// Use token from environment variable
 		vaultToken = envToken
 	} else {
 		return fmt.Errorf("vault token is required: provide via --token flag or VAULT_TOKEN environment variable")
@@ -47,16 +46,23 @@ func NewHashiCorpVaultClient() error {
 	config := api.DefaultConfig()
 	config.Address = *HashiCorpClient.vaultAddress
 
+	// 🔑 Inject TLS settings if requested
+	if HashiCorpClient.insecureSkipVerify != nil && *HashiCorpClient.insecureSkipVerify {
+		tlsConfig := &tls.Config{InsecureSkipVerify: true}
+		transport := &http.Transport{TLSClientConfig: tlsConfig}
+		config.HttpClient.Transport = transport
+	}
+
 	client, err := api.NewClient(config)
 	if err != nil {
 		return err
 	}
 
 	client.SetToken(vaultToken)
-	_, err = client.Auth().Token().LookupSelf()
-	if err != nil {
+	if _, err = client.Auth().Token().LookupSelf(); err != nil {
 		return fmt.Errorf("invalid vault token: %v", err)
 	}
+
 	HashiCorpClient.client = client
 	return nil
 }
