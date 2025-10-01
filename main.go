@@ -163,16 +163,18 @@ func main() {
 
 	configLoggerCtx.WithField("operation", "sc.ReloadConfig").Info("config file loaded")
 
-	var err error
-	vaultType = vault.GetVaultType()
-	if vaultType != "" {
-		err = vault.InitClient()
+	SetLogLevel()
+
+	if vault.Enabled() {
+		// Create vault logger context
+		vaultLoggerCtx := rootLoggerCtx.WithField("component", "vault")
+		vault.SetLogger(vaultLoggerCtx)
+
+		err := vault.Initialize()
 		if err != nil {
 			rootLoggerCtx.Fatal(err.Error())
 		}
 	}
-
-	SetLogLevel()
 
 	// load config in background to watch for config changes
 	hup := make(chan os.Signal, 1)
@@ -224,7 +226,7 @@ func main() {
 
 	rootLoggerCtx.Infof("app started. listening on %s", *listenAddress)
 	srv := &http.Server{Addr: *listenAddress}
-	err = web.ListenAndServe(srv, *webConfig, kitlogger)
+	err := web.ListenAndServe(srv, *webConfig, kitlogger)
 	if err != nil {
 		log.Fatal(err)
 	}
