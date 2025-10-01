@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -39,9 +40,8 @@ var (
 	sc = &SafeConfig{
 		C: &Config{},
 	}
-	reloadCh    chan chan error
-	VaultClient vault.VaultClient
-	vaultType   string
+	reloadCh     chan chan error
+	vaultManager *vault.VaultManager
 )
 
 func init() {
@@ -112,14 +112,15 @@ func metricsHandler() http.HandlerFunc {
 				return
 			}
 		}
-		if hostConfig == nil && vaultType != "" {
-			username, password, err := vault.GetCredentials(target)
+		if hostConfig == nil && vaultManager != nil {
+			creds, err := vaultManager.GetCredentials(context.Background(), target)
 			if err != nil {
-				targetLoggerCtx.WithError(err).Error("error getting credentails from vault")
-			}
-			hostConfig = &HostConfig{
-				Username: username,
-				Password: password,
+				targetLoggerCtx.WithError(err).Error("error getting credentials from vault")
+			} else {
+				hostConfig = &HostConfig{
+					Username: creds.Username,
+					Password: creds.Password,
+				}
 			}
 		}
 		// Always falling back to single host config when group config failed.
@@ -148,7 +149,7 @@ func main() {
 	log.AddFlags(kingpin.CommandLine)
 	kingpin.HelpFlag.Short('h')
 
-	vault.AddFlags(kingpin.CommandLine)
+	vault.AddVaultFlags(kingpin.CommandLine)
 	kingpin.Parse()
 
 	kitlogger := kitlog.NewLogfmtLogger(os.Stderr)
@@ -165,15 +166,35 @@ func main() {
 
 	SetLogLevel()
 
-	if vault.Enabled() {
+	if vault.IsVaultEnabled() {
 		// Create vault logger context
 		vaultLoggerCtx := rootLoggerCtx.WithField("component", "vault")
-		vault.SetLogger(vaultLoggerCtx)
 
-		err := vault.Initialize()
-		if err != nil {
-			rootLoggerCtx.Fatal(err.Error())
+		// Create vault configuration (only type, HashiCorp-specific config is handled internally)
+		vaultConfig := &vault.VaultConfig{
+			Type: vault.GetVaultType(),
 		}
+
+		// Initialize vault manager
+		var err error
+		vaultManager, err = vault.NewVaultManager(vaultConfig, vaultLoggerCtx)
+		if err != nil {
+			rootLoggerCtx.WithError(err).Fatal("Failed to initialize vault manager")
+		}
+
+		// Perform health check to confirm Vault connection is successful
+		vaultLoggerCtx.Info("Performing Vault health check...")
+		if err := vaultManager.HealthCheck(context.Background()); err != nil {
+			rootLoggerCtx.WithError(err).Fatal("Vault health check failed - connection is not working")
+		}
+		vaultLoggerCtx.Info("Vault health check passed - connection is working")
+
+		// Ensure vault manager is closed on exit
+		defer func() {
+			if err := vaultManager.Close(); err != nil {
+				rootLoggerCtx.WithError(err).Error("Failed to close vault manager")
+			}
+		}()
 	}
 
 	// load config in background to watch for config changes

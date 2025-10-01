@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
+// RedfishCreds represents credentials for Redfish authentication
 type RedfishCreds struct {
 	Username string
 	Password string
@@ -15,7 +17,9 @@ type RedfishCreds struct {
 
 // VaultClient defines the interface for interacting with a vault to get credentials.
 type VaultClient interface {
-	GetCredentials(target string) (*RedfishCreds, error)
+	GetCredentials(ctx context.Context, target string) (*RedfishCreds, error)
+	HealthCheck(ctx context.Context) error
+	Close() error
 }
 
 // VaultType represents the type of vault
@@ -23,6 +27,11 @@ type VaultType string
 
 const (
 	VaultTypeHashiCorp VaultType = "HashiCorp"
+)
+
+// Global variable for vault type flag
+var (
+	vaultTypeFlag *VaultType
 )
 
 // String returns the string representation of VaultType
@@ -41,64 +50,81 @@ func (v *VaultType) Set(value string) error {
 	return nil
 }
 
-var (
-	vaultType   *VaultType
-	vaultClient VaultClient
-	logger      *alog.Entry
-)
-
-// SetLogger sets the logger context for the vault package
-func SetLogger(l *alog.Entry) {
-	logger = l.WithField("driver", vaultType.String())
+// VaultConfig holds configuration for vault clients
+type VaultConfig struct {
+	Type VaultType
+	// HashiCorp-specific config is handled internally by the HashiCorp client
 }
 
-func AddFlags(a *kingpin.Application) {
-	vaultType = new(VaultType)
-	a.Flag("vault.type", "Specify the type of vault (only 'HashiCorp' is supported)").SetValue(vaultType)
+// VaultManager manages vault operations and provides a clean interface
+type VaultManager struct {
+	client VaultClient
+	logger *alog.Entry
+	config *VaultConfig
+}
+
+// NewVaultManager creates a new vault manager with the given configuration
+func NewVaultManager(config *VaultConfig, logger *alog.Entry) (*VaultManager, error) {
+	if config == nil {
+		return nil, fmt.Errorf("vault config cannot be nil")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger cannot be nil")
+	}
+
+	switch config.Type {
+	case VaultTypeHashiCorp:
+		// Use HashiCorp-specific factory function that handles internal configuration
+		return NewHashiCorpVaultManager(logger.WithField("component", "vault").WithField("type", config.Type.String()))
+	default:
+		return nil, fmt.Errorf("unsupported vault type: %s", config.Type)
+	}
+}
+
+// GetCredentials retrieves credentials for the given target
+func (vm *VaultManager) GetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
+	vm.logger.Debugf("Getting credentials for target: %s", target)
+
+	creds, err := vm.client.GetCredentials(ctx, target)
+	if err != nil {
+		vm.logger.Errorf("Failed to get credentials for target %s: %v", target, err)
+		return nil, fmt.Errorf("failed to get credentials for target %s: %w", target, err)
+	}
+
+	vm.logger.Debugf("Successfully retrieved credentials for target: %s", target)
+	return creds, nil
+}
+
+// HealthCheck performs a health check on the vault client
+func (vm *VaultManager) HealthCheck(ctx context.Context) error {
+	return vm.client.HealthCheck(ctx)
+}
+
+// Close closes the vault client
+func (vm *VaultManager) Close() error {
+	if vm.client != nil {
+		return vm.client.Close()
+	}
+	return nil
+}
+
+// AddVaultFlags adds the vault type command line flag
+func AddVaultFlags(a *kingpin.Application) {
+	vaultTypeFlag = new(VaultType)
+	a.Flag("vault.type", "Type of vault to use (hashicorp)").SetValue(vaultTypeFlag)
 
 	addHashiCorpFlags(a)
-	// Add flags for other vaults
 }
 
-func GetCredentials(target string) (username string, password string, err error) {
-	logger.Debugf("Getting credentials for target: %s", target)
-	creds, err := vaultClient.GetCredentials(target)
-	if err != nil {
-		logger.Errorf("Failed to get credentials for target %s: %v", target, err)
-		return "", "", err
+// GetVaultType returns the vault type from the command line flag
+func GetVaultType() VaultType {
+	if vaultTypeFlag != nil {
+		return *vaultTypeFlag
 	}
-	logger.Debugf("Successfully retrieved credentials for target: %s", target)
-	return creds.Username, creds.Password, nil
+	return ""
 }
 
-func Enabled() bool {
-	enabled := vaultType != nil
-	logger.Debugf("Vault enabled: %t", enabled)
-	return enabled
-}
-
-// Initialize initilizes the configured VaultClient.
-func Initialize() error {
-	logger.Debug("Initializing vault client")
-
-	if !Enabled() {
-		logger.Debug("Vault is not enabled - no vault type specified")
-		return fmt.Errorf("vault type not specified")
-	}
-
-	logger.Infof("Initializing vault client for type: %s", *vaultType)
-	switch *vaultType {
-	case VaultTypeHashiCorp:
-		var err error
-		vaultClient, err = NewHashiCorpVaultClient()
-		if err != nil {
-			logger.Errorf("Failed to initialize HashiCorp vault client: %v", err)
-			return err
-		}
-		logger.Info("Vault client initialized successfully")
-		return nil
-	default:
-		logger.Errorf("Unsupported vault type: %s", *vaultType)
-		return fmt.Errorf("unsupported vault type: %s", *vaultType)
-	}
+// IsVaultEnabled returns true if vault is enabled (vault type is set)
+func IsVaultEnabled() bool {
+	return GetVaultType() != ""
 }
