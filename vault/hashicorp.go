@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	alog "github.com/apex/log"
 	"github.com/hashicorp/vault/api"
@@ -97,7 +98,10 @@ func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hash
 
 	if config.insecure {
 		logger.Warn("TLS verification is disabled - this is insecure and should only be used for testing")
-		vaultConfig.ConfigureTLS(&api.TLSConfig{Insecure: true})
+		if err := vaultConfig.ConfigureTLS(&api.TLSConfig{Insecure: true}); err != nil {
+			logger.Errorf("Failed to configure TLS: %v", err)
+			return nil, fmt.Errorf("failed to configure TLS: %w", err)
+		}
 	}
 
 	client, err := api.NewClient(vaultConfig)
@@ -108,10 +112,6 @@ func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hash
 
 	logger.Debug("Setting Vault token and validating authentication")
 	client.SetToken(config.token)
-	if _, err = client.Auth().Token().LookupSelf(); err != nil {
-		logger.Errorf("Vault token validation failed: %v", err)
-		return nil, fmt.Errorf("invalid vault token: %w", err)
-	}
 
 	logger.Info("HashiCorp Vault client initialized successfully")
 	return &hashiCorpVaultClient{
@@ -198,7 +198,9 @@ func (h *hashiCorpVaultClient) HealthCheck(ctx context.Context) error {
 	h.logger.Debug("Performing health check on HashiCorp Vault client")
 
 	// Try to lookup the token to verify connectivity and authentication
-	_, err := h.client.Auth().Token().LookupSelf()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := h.client.Auth().Token().LookupSelfWithContext(ctx)
 	if err != nil {
 		h.logger.Errorf("Health check failed: %v", err)
 		return fmt.Errorf("vault health check failed: %w", err)
