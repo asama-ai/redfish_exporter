@@ -42,20 +42,45 @@ type HashiCorpVaultClient struct {
 }
 
 var (
-	address   *string
-	token     *string
-	kvVersion *KVVersion
-	kvMount   *string
-	insecure  *bool
+	address  *string
+	token    *string
+	kvMount  *string
+	insecure *bool
 )
 
 func addHashiCorpFlags(a *kingpin.Application) {
 	address = a.Flag("hashicorp.address", "Vault address").OverrideDefaultFromEnvar("VAULT_ADDR").String()
 	token = a.Flag("hashicorp.token", "Vault token").OverrideDefaultFromEnvar("VAULT_TOKEN").String()
-	kvVersion = new(KVVersion)
-	a.Flag("hashicorp.kv.version", "KV secret engine version (1/v1 or 2/v2)").Default("v1").OverrideDefaultFromEnvar("VAULT_KV_VERSION").SetValue(kvVersion)
 	kvMount = a.Flag("hashicorp.kv.mount", "KV mount path in the Vault").Default("redfish").OverrideDefaultFromEnvar("VAULT_MOUNT_PATH").String()
 	insecure = a.Flag("hashicorp.insecure-skip-tls-verify", "Disable TLS verification (insecure, use for testing only)").OverrideDefaultFromEnvar("VAULT_SKIP_VERIFY").Bool()
+}
+
+// detectKVVersion auto-detects the KV version for the given mount path
+func detectKVVersion(client *api.Client, mountPath string) (KVVersion, error) {
+	logger.Debugf("Auto-detecting KV version for mount path: %s", mountPath)
+
+	mounts, err := client.Sys().ListMounts()
+	if err != nil {
+		return "", fmt.Errorf("failed to list mounts: %w", err)
+	}
+
+	// Look for the mount path in the mounts
+	for path, mount := range mounts {
+		if path == mountPath+"/" {
+			if mount.Type == "kv" {
+				// Check if it's KV v2 by looking for the version field
+				if version, exists := mount.Options["version"]; exists && version == "2" {
+					logger.Debugf("Detected KV v2 for mount path: %s", mountPath)
+					return KVVersionV2, nil
+				}
+				logger.Debugf("Detected KV v1 for mount path: %s", mountPath)
+				return KVVersionV1, nil
+			}
+			return "", fmt.Errorf("mount path %s exists but is not a KV secret engine (type: %s)", mountPath, mount.Type)
+		}
+	}
+
+	return "", fmt.Errorf("mount path %s not found in Vault", mountPath)
 }
 
 func NewHashiCorpVaultClient() (*HashiCorpVaultClient, error) {
@@ -80,7 +105,6 @@ func NewHashiCorpVaultClient() (*HashiCorpVaultClient, error) {
 		config.ConfigureTLS(&api.TLSConfig{Insecure: true})
 	}
 
-	logger.Debugf("Creating Vault client with KV version: %s, mount: %s", *kvVersion, *kvMount)
 	client, err := api.NewClient(config)
 	if err != nil {
 		logger.Errorf("Failed to create Vault client: %v", err)
@@ -94,10 +118,18 @@ func NewHashiCorpVaultClient() (*HashiCorpVaultClient, error) {
 		return nil, fmt.Errorf("invalid vault token: %v", err)
 	}
 
+	// Auto-detect KV version
+	detectedVersion, err := detectKVVersion(client, *kvMount)
+	if err != nil {
+		logger.Errorf("Failed to auto-detect KV version: %v", err)
+		return nil, fmt.Errorf("failed to auto-detect KV version for mount %s: %w", *kvMount, err)
+	}
+	logger.Infof("Auto-detected KV version: %s for mount: %s", detectedVersion, *kvMount)
+
 	logger.Info("HashiCorp Vault client initialized successfully")
 	return &HashiCorpVaultClient{
 		client:    client,
-		kvVersion: *kvVersion,
+		kvVersion: detectedVersion,
 		kvMount:   *kvMount,
 	}, nil
 }
