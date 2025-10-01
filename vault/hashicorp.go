@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	alog "github.com/apex/log"
 	"github.com/hashicorp/vault/api"
@@ -15,6 +16,7 @@ type hashiCorpVaultClient struct {
 	kvMount       string
 	versionsToTry []string // List of KV versions to try, starts with ["v2", "v1"], reduces to [successful_version] after detection
 	logger        *alog.Entry
+	mu            sync.RWMutex // Protects versionsToTry from concurrent access
 }
 
 // Legacy global variables for backward compatibility
@@ -117,21 +119,29 @@ func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hash
 		kvMount:       config.kvMount,
 		versionsToTry: []string{"v2", "v1"}, // Start with both versions for detection
 		logger:        logger,
+		mu:            sync.RWMutex{}, // Initialize mutex
 	}, nil
 }
 
 // GetCredentials retrieves credentials from HashiCorp Vault.
 // It uses the cached KV version, or detects it on first use.
 func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
-	// Check if we're in detection phase (multiple versions) or using cached version (single version)
-	if len(h.versionsToTry) > 1 {
+	// Acquire read lock to check current state
+	h.mu.RLock()
+	isDetectionPhase := len(h.versionsToTry) > 1
+	versionsToTry := make([]string, len(h.versionsToTry))
+	copy(versionsToTry, h.versionsToTry)
+	h.mu.RUnlock()
+
+	// Log based on current state
+	if isDetectionPhase {
 		h.logger.Debugf("Detecting KV version and retrieving credentials for target: %s (mount: %s)", target, h.kvMount)
 	} else {
-		h.logger.Debugf("Retrieving credentials for target: %s (mount: %s, cached version: %s)", target, h.kvMount, h.versionsToTry[0])
+		h.logger.Debugf("Retrieving credentials for target: %s (mount: %s, cached version: %s)", target, h.kvMount, versionsToTry[0])
 	}
 
 	// Try each version until one succeeds
-	for _, version := range h.versionsToTry {
+	for _, version := range versionsToTry {
 		h.logger.Debugf("Trying KV %s to read secret from mount: %s, target: %s", version, h.kvMount, target)
 
 		var secret *api.KVSecret
@@ -145,9 +155,14 @@ func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string
 
 		if err == nil && secret != nil && secret.Data != nil {
 			// Success! Cache the version if this was detection (reduce list to just this version)
-			if len(h.versionsToTry) > 1 {
-				h.versionsToTry = []string{version}
-				h.logger.Infof("Detected and cached KV %s for mount: %s", version, h.kvMount)
+			if isDetectionPhase {
+				h.mu.Lock()
+				// Double-check pattern: verify we're still in detection phase
+				if len(h.versionsToTry) > 1 {
+					h.versionsToTry = []string{version}
+					h.logger.Infof("Detected and cached KV %s for mount: %s", version, h.kvMount)
+				}
+				h.mu.Unlock()
 			}
 			h.logger.Debugf("Successfully retrieved credentials using KV %s for target %s", version, target)
 			return h.extractCredentials(secret.Data, target)
