@@ -157,11 +157,8 @@ func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string
 			// Success! Cache the version if this was detection (reduce list to just this version)
 			if isDetectionPhase {
 				h.mu.Lock()
-				// Double-check pattern: verify we're still in detection phase
-				if len(h.versionsToTry) > 1 {
-					h.versionsToTry = []string{version}
-					h.logger.Infof("Detected and cached KV %s for mount: %s", version, h.kvMount)
-				}
+				h.versionsToTry = []string{version}
+				h.logger.Infof("Detected and cached KV %s for mount: %s", version, h.kvMount)
 				h.mu.Unlock()
 			}
 			h.logger.Debugf("Successfully retrieved credentials using KV %s for target %s", version, target)
