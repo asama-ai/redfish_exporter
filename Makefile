@@ -35,11 +35,11 @@ build: |
 	$(GO) build -o build/redfish_exporter -ldflags  '-X "main.Version=$(VERSION)" -X  "main.BuildRevision=$(REVERSION)" -X  "main.BuildBranch=$(BRANCH)" -X "main.BuildTime=$(TIME)"'
 
 docker-build-centos7:
-	$(DOCKER) run -v `pwd`:/go/src/github.com/asama-ai/redfish_exporter  -w /go/src/github.com/asama-ai/redfish_exporter docker.io/asama-ai/prom-builder:centos7  /bin/bash -c "yum update -y && make build"
+	$(DOCKER) run -v `pwd`:/go/src/github.com/jenningsloy318/redfish_exporter  -w /go/src/github.com/jenningsloy318/redfish_exporter docker.io/jenningsloy318/prom-builder:centos7  /bin/bash -c "yum update -y && make build"
 
 
 docker-build-centos8:
-	$(DOCKER) run -v `pwd`:/go/src/github.com/asama-ai/redfish_exporter  -w /go/src/github.com/asama-ai/redfish_exporter docker.io/asama-ai/prom-builder:centos8  /bin/bash -c "yum update -y && make build"
+	$(DOCKER) run -v `pwd`:/go/src/github.com/jenningsloy318/redfish_exporter  -w /go/src/github.com/jenningsloy318/redfish_exporter docker.io/jenningsloy318/prom-builder:centos8  /bin/bash -c "yum update -y && make build"
 
 docker-build:
 	make docker-build-centos7
@@ -50,10 +50,10 @@ rpm: | build
 	$(RPM)
 
 docker-rpm-centos7:
-	$(DOCKER) run -v `pwd`:/go/src/github.com/asama-ai/redfish_exporter  -w /go/src/github.com/asama-ai/redfish_exporter docker.io/asama-ai/prom-builder:centos7  /bin/bash -c "yum update -y && make rpm"
+	$(DOCKER) run -v `pwd`:/go/src/github.com/jenningsloy318/redfish_exporter  -w /go/src/github.com/jenningsloy318/redfish_exporter docker.io/jenningsloy318/prom-builder:centos7  /bin/bash -c "yum update -y && make rpm"
 
 docker-rpm-centos8:
-	$(DOCKER) run -v `pwd`:/go/src/github.com/asama-ai/redfish_exporter  -w /go/src/github.com/asama-ai/redfish_exporter docker.io/asama-ai/prom-builder:centos8  /bin/bash -c "yum update -y && make rpm"
+	$(DOCKER) run -v `pwd`:/go/src/github.com/jenningsloy318/redfish_exporter  -w /go/src/github.com/jenningsloy318/redfish_exporter docker.io/jenningsloy318/prom-builder:centos8  /bin/bash -c "yum update -y && make rpm"
 
 docker-rpm:
 	make docker-rpm-centos7

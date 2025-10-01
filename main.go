@@ -9,9 +9,9 @@ import (
 	"syscall"
 
 	alog "github.com/apex/log"
-	"github.com/asama-ai/redfish_exporter/collector"
-	"github.com/asama-ai/redfish_exporter/vault"
 	kitlog "github.com/go-kit/log"
+	"github.com/jenningsloy318/redfish_exporter/collector"
+	"github.com/jenningsloy318/redfish_exporter/vault"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"

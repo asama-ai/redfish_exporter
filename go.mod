@@ -1,4 +1,4 @@
-module github.com/asama-ai/redfish_exporter
+module github.com/jenningsloy318/redfish_exporter
 
 go 1.21
 
