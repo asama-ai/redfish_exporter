@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	alog "github.com/apex/log"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
@@ -84,6 +85,10 @@ func NewVaultManager(config *VaultConfig, logger *alog.Entry) (*VaultManager, er
 // GetCredentials retrieves credentials for the given target
 func (vm *VaultManager) GetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
 	vm.logger.Debugf("Getting credentials for target: %s", target)
+
+	// Add 5-second timeout to the context
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	creds, err := vm.client.GetCredentials(ctx, target)
 	if err != nil {
