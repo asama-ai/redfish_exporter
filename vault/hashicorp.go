@@ -20,7 +20,6 @@ type hashiCorpVaultClient struct {
 	mu            sync.RWMutex // Protects versionsToTry from concurrent access
 }
 
-// Legacy global variables for backward compatibility
 var (
 	address  *string
 	token    *string
