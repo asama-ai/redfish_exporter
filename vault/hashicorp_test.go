@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	// Configure apex logger for test debugging - default handler includes timestamps
-	alog.SetLevel(alog.DebugLevel)
-}
+// func init() {
+// 	// Configure apex logger for test debugging
+// 	alog.SetLevel(alog.DebugLevel)
+// }
 
 // NewHashiCorpVaultManagerForTesting creates a VaultManager for testing with custom configuration
 func NewHashiCorpVaultManagerForTesting(config *hashiCorpConfig, logger *alog.Entry) (*VaultManager, error) {
@@ -73,6 +73,7 @@ func TestHashiCorpVaultIntegration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			// Create vault configuration for testing
 			config := &hashiCorpConfig{
@@ -88,11 +89,11 @@ func TestHashiCorpVaultIntegration(t *testing.T) {
 			require.NotNil(t, manager, "Vault manager should not be nil")
 
 			// Ensure cleanup
-			defer func() {
+			t.Cleanup(func() {
 				if err := manager.Close(); err != nil {
 					t.Logf("Warning: failed to close vault manager: %v", err)
 				}
-			}()
+			})
 
 			// Test health check
 			t.Run("HealthCheck", func(t *testing.T) {
@@ -169,11 +170,11 @@ func TestHashiCorpVaultIntegrationErrorHandling(t *testing.T) {
 
 				// Cleanup if manager was created successfully
 				if manager != nil {
-					defer func() {
+					t.Cleanup(func() {
 						if err := manager.Close(); err != nil {
 							t.Logf("Warning: failed to close vault manager: %v", err)
 						}
-					}()
+					})
 				}
 
 				// For invalid mount path, test that credential retrieval fails
@@ -214,11 +215,11 @@ func TestHashiCorpVaultIntegrationCredentialRetrieval(t *testing.T) {
 
 		manager, err := NewHashiCorpVaultManagerForTesting(config, logger)
 		require.NoError(t, err)
-		defer func() {
+		t.Cleanup(func() {
 			if err := manager.Close(); err != nil {
 				t.Logf("Warning: failed to close vault manager: %v", err)
 			}
-		}()
+		})
 
 		// Test credential retrieval
 		creds, err := manager.GetCredentials(context.Background(), "192.168.10.10")
@@ -240,11 +241,11 @@ func TestHashiCorpVaultIntegrationCredentialRetrieval(t *testing.T) {
 
 		manager, err := NewHashiCorpVaultManagerForTesting(config, logger)
 		require.NoError(t, err)
-		defer func() {
+		t.Cleanup(func() {
 			if err := manager.Close(); err != nil {
 				t.Logf("Warning: failed to close vault manager: %v", err)
 			}
-		}()
+		})
 
 		// Test credential retrieval
 		creds, err := manager.GetCredentials(context.Background(), "192.168.10.10")
