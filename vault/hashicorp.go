@@ -129,80 +129,42 @@ func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string
 	}
 	h.logger.Debugf("Retrieving credentials for target: %s (mount: %s, cached version: %s)", target, h.kvMount, cachedVersion)
 
-	// If we haven't detected the KV version yet, try to detect it
-	if h.kvVersion == nil {
-		return h.detectAndGetCredentials(ctx, target)
-	}
-
-	// Use the cached version
-	return h.getCredentialsWithVersion(ctx, target, *h.kvVersion)
-}
-
-// detectAndGetCredentials detects the KV version and retrieves credentials
-func (h *hashiCorpVaultClient) detectAndGetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
-	h.logger.Debugf("KV version not cached, detecting version for target: %s", target)
-
-	// Try KV v2 first
-	h.logger.Debugf("Trying KV v2 to read secret from mount: %s, target: %s", h.kvMount, target)
-	secret, err := h.client.KVv2(h.kvMount).Get(ctx, target)
-	if err == nil && secret != nil && secret.Data != nil {
-		version := "v2"
-		h.kvVersion = &version // Cache the version
-		h.logger.Infof("Detected and cached KV v2 for mount: %s", h.kvMount)
-		h.logger.Debugf("Successfully retrieved credentials using KV v2 for target %s", target)
-		return h.extractCredentials(secret.Data, target)
+	// Determine which versions to try
+	var versionsToTry []string
+	if h.kvVersion != nil {
+		// Use cached version only
+		versionsToTry = []string{*h.kvVersion}
 	} else {
-		h.logger.Debugf("KV v2 failed for target %s: %v, falling back to KV v1", target, err)
+		// Try v2 first, then v1 for detection
+		versionsToTry = []string{"v2", "v1"}
 	}
 
-	// Fall back to KV v1
-	h.logger.Debugf("Trying KV v1 to read secret from mount: %s, target: %s", h.kvMount, target)
-	secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
-	if err != nil {
-		h.logger.Errorf("Both KV v2 and v1 failed to retrieve secret for target %s. Last error: %v", target, err)
-		return nil, fmt.Errorf("failed to retrieve secret for target %s: %w", target, err)
-	}
-	if secret == nil || secret.Data == nil {
-		h.logger.Errorf("No data found for target %s with either KV version", target)
-		return nil, fmt.Errorf("no data found for target %s", target)
-	}
+	// Try each version until one succeeds
+	for _, version := range versionsToTry {
+		h.logger.Debugf("Trying KV %s to read secret from mount: %s, target: %s", version, h.kvMount, target)
 
-	version := "v1"
-	h.kvVersion = &version // Cache the version
-	h.logger.Infof("Detected and cached KV v1 for mount: %s", h.kvMount)
-	h.logger.Debugf("Successfully retrieved credentials using KV v1 for target %s", target)
-	return h.extractCredentials(secret.Data, target)
-}
+		var secret *api.KVSecret
+		var err error
 
-// getCredentialsWithVersion retrieves credentials using the specified KV version
-func (h *hashiCorpVaultClient) getCredentialsWithVersion(ctx context.Context, target string, version string) (*RedfishCreds, error) {
-	h.logger.Debugf("Using cached KV %s to read secret from path: %s/%s", version, h.kvMount, target)
+		if version == "v2" {
+			secret, err = h.client.KVv2(h.kvMount).Get(ctx, target)
+		} else {
+			secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
+		}
 
-	var secret *api.KVSecret
-	var err error
-
-	if version == "v2" {
-		secret, err = h.client.KVv2(h.kvMount).Get(ctx, target)
 		if err == nil && secret != nil && secret.Data != nil {
+			// Success! Cache the version if this was detection
+			if h.kvVersion == nil {
+				h.kvVersion = &version
+				h.logger.Infof("Detected and cached KV %s for mount: %s", version, h.kvMount)
+			}
+			h.logger.Debugf("Successfully retrieved credentials using KV %s for target %s", version, target)
 			return h.extractCredentials(secret.Data, target)
 		}
-	} else {
-		secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
-		if err == nil && secret != nil && secret.Data != nil {
-			return h.extractCredentials(secret.Data, target)
-		}
+		h.logger.Debugf("KV %s failed for target %s: %v", version, target, err)
 	}
 
-	if err != nil {
-		h.logger.Errorf("Failed to retrieve secret for target %s using cached KV %s: %v", target, version, err)
-		return nil, fmt.Errorf("failed to retrieve secret for target %s: %w", target, err)
-	}
-	if secret == nil || secret.Data == nil {
-		h.logger.Errorf("No data found for target %s using cached KV %s", target, version)
-		return nil, fmt.Errorf("no data found for target %s", target)
-	}
-
-	return nil, fmt.Errorf("unexpected error retrieving credentials for target %s", target)
+	return nil, fmt.Errorf("failed to retrieve secret for target %s", target)
 }
 
 // extractCredentials extracts username and password from the data map
