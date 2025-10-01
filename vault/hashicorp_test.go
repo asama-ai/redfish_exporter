@@ -148,8 +148,8 @@ func TestHashiCorpVaultIntegrationErrorHandling(t *testing.T) {
 				kvMount:  "test/bmccredsv1",
 				insecure: false,
 			},
-			expectError: true,
-			errorMsg:    "invalid vault token",
+			expectError: false, // Initialization will succeed, error occurs during health check
+			errorMsg:    "",    // Not applicable since we expect success
 		},
 	}
 
@@ -181,6 +181,13 @@ func TestHashiCorpVaultIntegrationErrorHandling(t *testing.T) {
 					_, err := manager.GetCredentials(context.Background(), "192.168.10.10")
 					assert.Error(t, err, "Expected error when trying to get credentials from invalid mount path")
 					assert.Contains(t, err.Error(), "failed to retrieve secret", "Error should indicate secret retrieval failure")
+				}
+
+				// For invalid token, test that health check fails
+				if tt.name == "Invalid token" {
+					err := manager.HealthCheck(context.Background())
+					assert.Error(t, err, "Expected error when trying to perform health check with invalid token")
+					assert.Contains(t, err.Error(), "vault health check failed", "Error should indicate health check failure")
 				}
 			}
 		})
