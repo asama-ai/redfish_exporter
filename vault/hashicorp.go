@@ -3,53 +3,17 @@ package vault
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	alog "github.com/apex/log"
 	"github.com/hashicorp/vault/api"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
-// getMapKeys returns the keys of a map as a slice of strings
-func getMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-// KVVersion represents the KV secret engine version
-type KVVersion string
-
-const (
-	KVVersionV1 KVVersion = "v1"
-	KVVersionV2 KVVersion = "v2"
-)
-
-// String returns the string representation of KVVersion
-func (k KVVersion) String() string {
-	return string(k)
-}
-
-// Set implements the kingpin.Value interface
-func (k *KVVersion) Set(value string) error {
-	switch strings.ToLower(value) {
-	case "1", "v1":
-		*k = KVVersionV1
-	case "2", "v2":
-		*k = KVVersionV2
-	default:
-		return fmt.Errorf("invalid KV version: %s (must be 1/v1 or 2/v2)", value)
-	}
-	return nil
-}
-
 // hashiCorpVaultClient implements the VaultClient interface for HashiCorp Vault
 type hashiCorpVaultClient struct {
 	client    *api.Client
-	kvVersion KVVersion
 	kvMount   string
+	kvVersion *string // Cached KV version ("v1" or "v2"), nil if not detected yet
 	logger    *alog.Entry
 }
 
@@ -104,38 +68,6 @@ func NewHashiCorpVaultManager(logger *alog.Entry) (*VaultManager, error) {
 	}, nil
 }
 
-// detectKVVersion auto-detects the KV version for the given mount path
-func detectKVVersion(client *api.Client, mountPath string, logger *alog.Entry) (KVVersion, error) {
-	// Normalize mount path by trimming trailing slash and adding it back
-	normalizedPath := strings.TrimSuffix(mountPath, "/") + "/"
-	logger.Debugf("Auto-detecting KV version for mount path: %s (normalized: %s)", mountPath, normalizedPath)
-
-	mounts, err := client.Sys().ListMounts()
-	if err != nil {
-		return "", fmt.Errorf("failed to list mounts: %w", err)
-	}
-
-	// Use comma-ok style to check if mount exists
-	mount, exists := mounts[normalizedPath]
-	if !exists {
-		return "", fmt.Errorf("mount path %s not found in Vault", mountPath)
-	}
-
-	// Check if it's a KV secret engine
-	if mount.Type != "kv" {
-		return "", fmt.Errorf("mount path %s exists but is not a KV secret engine (type: %s)", mountPath, mount.Type)
-	}
-
-	// Check if it's KV v2 by looking for the version field
-	if version, exists := mount.Options["version"]; exists && version == "2" {
-		logger.Debugf("Detected KV v2 for mount path: %s", mountPath)
-		return KVVersionV2, nil
-	}
-
-	logger.Debugf("Detected KV v1 for mount path: %s", mountPath)
-	return KVVersionV1, nil
-}
-
 // newHashiCorpVaultClient creates a new HashiCorp Vault client
 func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hashiCorpVaultClient, error) {
 	if config == nil {
@@ -179,76 +111,104 @@ func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hash
 		return nil, fmt.Errorf("invalid vault token: %w", err)
 	}
 
-	// Auto-detect KV version
-	detectedVersion, err := detectKVVersion(client, config.kvMount, logger)
-	if err != nil {
-		logger.Errorf("Failed to auto-detect KV version: %v", err)
-		return nil, fmt.Errorf("failed to auto-detect KV version for mount %s: %w", config.kvMount, err)
-	}
-	logger.Infof("Auto-detected KV version: %s for mount: %s", detectedVersion, config.kvMount)
-
 	logger.Info("HashiCorp Vault client initialized successfully")
 	return &hashiCorpVaultClient{
 		client:    client,
-		kvVersion: detectedVersion,
 		kvMount:   config.kvMount,
+		kvVersion: nil, // Will be detected on first use
 		logger:    logger,
 	}, nil
 }
 
 // GetCredentials retrieves credentials from HashiCorp Vault.
+// It uses the cached KV version, or detects it on first use.
 func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
-	h.logger.Debugf("Retrieving credentials for target: %s (KV version: %s, mount: %s)", target, h.kvVersion, h.kvMount)
-
-	var secret *api.KVSecret
-	var err error
-	if h.kvVersion == KVVersionV2 {
-		h.logger.Debugf("Using KV v2 to read secret from path: %s/%s", h.kvMount, target)
-		secret, err = h.client.KVv2(h.kvMount).Get(ctx, target)
-	} else {
-		h.logger.Debugf("Using KV v1 to read secret from path: %s/%s", h.kvMount, target)
-		secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
+	var cachedVersion string
+	if h.kvVersion != nil {
+		cachedVersion = *h.kvVersion
 	}
+	h.logger.Debugf("Retrieving credentials for target: %s (mount: %s, cached version: %s)", target, h.kvMount, cachedVersion)
+
+	// If we haven't detected the KV version yet, try to detect it
+	if h.kvVersion == nil {
+		return h.detectAndGetCredentials(ctx, target)
+	}
+
+	// Use the cached version
+	return h.getCredentialsWithVersion(ctx, target, *h.kvVersion)
+}
+
+// detectAndGetCredentials detects the KV version and retrieves credentials
+func (h *hashiCorpVaultClient) detectAndGetCredentials(ctx context.Context, target string) (*RedfishCreds, error) {
+	h.logger.Debugf("KV version not cached, detecting version for target: %s", target)
+
+	// Try KV v2 first
+	h.logger.Debugf("Trying KV v2 to read secret from mount: %s, target: %s", h.kvMount, target)
+	secret, err := h.client.KVv2(h.kvMount).Get(ctx, target)
+	if err == nil && secret != nil && secret.Data != nil {
+		version := "v2"
+		h.kvVersion = &version // Cache the version
+		h.logger.Infof("Detected and cached KV v2 for mount: %s", h.kvMount)
+		h.logger.Debugf("Successfully retrieved credentials using KV v2 for target %s", target)
+		return h.extractCredentials(secret.Data, target)
+	} else {
+		h.logger.Debugf("KV v2 failed for target %s: %v, falling back to KV v1", target, err)
+	}
+
+	// Fall back to KV v1
+	h.logger.Debugf("Trying KV v1 to read secret from mount: %s, target: %s", h.kvMount, target)
+	secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
 	if err != nil {
-		h.logger.Errorf("Failed to retrieve secret for target %s: %v", target, err)
+		h.logger.Errorf("Both KV v2 and v1 failed to retrieve secret for target %s. Last error: %v", target, err)
 		return nil, fmt.Errorf("failed to retrieve secret for target %s: %w", target, err)
 	}
 	if secret == nil || secret.Data == nil {
-		h.logger.Errorf("No data found for target %s", target)
+		h.logger.Errorf("No data found for target %s with either KV version", target)
 		return nil, fmt.Errorf("no data found for target %s", target)
 	}
 
-	h.logger.Debugf("Secret data structure for target %s: %+v", target, secret.Data)
+	version := "v1"
+	h.kvVersion = &version // Cache the version
+	h.logger.Infof("Detected and cached KV v1 for mount: %s", h.kvMount)
+	h.logger.Debugf("Successfully retrieved credentials using KV v1 for target %s", target)
+	return h.extractCredentials(secret.Data, target)
+}
 
-	// Handle both KV v1 and v2 data structures
-	var dataMap map[string]any
-	var ok bool
+// getCredentialsWithVersion retrieves credentials using the specified KV version
+func (h *hashiCorpVaultClient) getCredentialsWithVersion(ctx context.Context, target string, version string) (*RedfishCreds, error) {
+	h.logger.Debugf("Using cached KV %s to read secret from path: %s/%s", version, h.kvMount, target)
 
-	if h.kvVersion == KVVersionV2 {
-		// KV v2 stores data under "data" key
-		h.logger.Debug("Processing KV v2 data structure")
-		h.logger.Debugf("KV v2 secret.Data keys: %v", getMapKeys(secret.Data))
+	var secret *api.KVSecret
+	var err error
 
-		// Check if the response has the expected KV v2 structure
-		if dataInterface, exists := secret.Data["data"]; exists {
-			dataMap, ok = dataInterface.(map[string]any)
-		} else {
-			h.logger.Errorf("Data key not found in KV v2 response for target %s. Available keys: %v", target, getMapKeys(secret.Data))
-			return nil, fmt.Errorf("data not found for target %s", target)
+	if version == "v2" {
+		secret, err = h.client.KVv2(h.kvMount).Get(ctx, target)
+		if err == nil && secret != nil && secret.Data != nil {
+			return h.extractCredentials(secret.Data, target)
 		}
 	} else {
-		// KV v1 stores data directly in secret.Data
-		h.logger.Debug("Processing KV v1 data structure")
-		dataMap = secret.Data
-		ok = true
+		secret, err = h.client.KVv1(h.kvMount).Get(ctx, target)
+		if err == nil && secret != nil && secret.Data != nil {
+			return h.extractCredentials(secret.Data, target)
+		}
 	}
 
-	if !ok {
-		h.logger.Errorf("Unexpected data format for target %s", target)
-		return nil, fmt.Errorf("unexpected data format for target %s", target)
+	if err != nil {
+		h.logger.Errorf("Failed to retrieve secret for target %s using cached KV %s: %v", target, version, err)
+		return nil, fmt.Errorf("failed to retrieve secret for target %s: %w", target, err)
+	}
+	if secret == nil || secret.Data == nil {
+		h.logger.Errorf("No data found for target %s using cached KV %s", target, version)
+		return nil, fmt.Errorf("no data found for target %s", target)
 	}
 
+	return nil, fmt.Errorf("unexpected error retrieving credentials for target %s", target)
+}
+
+// extractCredentials extracts username and password from the data map
+func (h *hashiCorpVaultClient) extractCredentials(dataMap map[string]any, target string) (*RedfishCreds, error) {
 	h.logger.Debugf("Extracting username and password from secret data for target %s", target)
+
 	username, ok := dataMap["username"].(string)
 	if !ok {
 		h.logger.Errorf("Username field not found or not a string for target %s", target)
@@ -261,7 +221,7 @@ func (h *hashiCorpVaultClient) GetCredentials(ctx context.Context, target string
 		return nil, fmt.Errorf("password not found for target %s", target)
 	}
 
-	h.logger.Debugf("Successfully retrieved credentials for target %s", target)
+	h.logger.Debugf("Successfully extracted credentials for target %s", target)
 	return &RedfishCreds{
 		Username: username,
 		Password: password,
