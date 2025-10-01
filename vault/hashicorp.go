@@ -118,7 +118,6 @@ func newHashiCorpVaultClient(config *hashiCorpConfig, logger *alog.Entry) (*hash
 		kvMount:       config.kvMount,
 		versionsToTry: []string{"v2", "v1"}, // Start with both versions for detection
 		logger:        logger,
-		mu:            sync.RWMutex{}, // Initialize mutex
 	}, nil
 }
 
