@@ -113,8 +113,8 @@ func (vm *VaultManager) Close() error {
 	return nil
 }
 
-// AddVaultFlags adds the vault type command line flag
-func AddVaultFlags(a *kingpin.Application) {
+// AddFlags adds the vault type command line flag and driver specific flags
+func AddFlags(a *kingpin.Application) {
 	vaultTypeFlag = new(VaultType)
 	a.Flag("vault.type", "Type of vault to use (hashicorp)").SetValue(vaultTypeFlag)
 

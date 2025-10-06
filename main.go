@@ -149,7 +149,7 @@ func main() {
 	log.AddFlags(kingpin.CommandLine)
 	kingpin.HelpFlag.Short('h')
 
-	vault.AddVaultFlags(kingpin.CommandLine)
+	vault.AddFlags(kingpin.CommandLine)
 	kingpin.Parse()
 
 	kitlogger := kitlog.NewLogfmtLogger(os.Stderr)
