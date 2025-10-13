@@ -177,7 +177,7 @@ func (s *SystemCollector) Collect(ch chan<- prometheus.Metric) {
 			if systemTotalMemoryHealthStateValue, ok := parseCommonStatusHealth(systemTotalMemoryHealthState); ok {
 				ch <- prometheus.MustNewConstMetric(s.metrics["system_total_memory_health_state"].desc, prometheus.GaugeValue, systemTotalMemoryHealthStateValue, systemLabelValues...)
 			}
-			
+
 			// get system OdataID
 			//systemOdataID := system.ODataID
 
@@ -350,8 +350,20 @@ func (s *SystemCollector) Collect(ch chan<- prometheus.Metric) {
 			} else if pcieFunctions == nil {
 				systemLogContext.WithField("operation", "system.PCIeFunctions()").Info("no PCI-E device function data found")
 			} else {
-				wg9.Add(len(pcieFunctions))
+				// Deduplicate PCIe functions - some Redfish APIs return duplicate function IDs
+				seenFunctions := make(map[string]bool)
+				uniqueFunctions := make([]*redfish.PCIeFunction, 0, len(pcieFunctions))
 				for _, pcieFunction := range pcieFunctions {
+					if pcieFunction != nil && pcieFunction.ID != "" {
+						if !seenFunctions[pcieFunction.ID] {
+							seenFunctions[pcieFunction.ID] = true
+							uniqueFunctions = append(uniqueFunctions, pcieFunction)
+						}
+					}
+				}
+
+				wg9.Add(len(uniqueFunctions))
+				for _, pcieFunction := range uniqueFunctions {
 					go parsePcieFunction(ch, systemHostName, pcieFunction, wg9)
 				}
 			}
