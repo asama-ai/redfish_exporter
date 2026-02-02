@@ -28,12 +28,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push (multi-arch amd64 + arm64)
+      - name: Build and push (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }}
-            ghcr.io/asama-ai/redfish-exporter:latest
+          build-args: "TARGETARCH=amd64"
+          tags: ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }}-amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          build-args: "TARGETARCH=arm64"
+          tags: ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }}-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create single multi-arch image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }} \
+            -t ghcr.io/asama-ai/redfish-exporter:latest \
+            ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }}-amd64 \
+            ghcr.io/asama-ai/redfish-exporter:${{ steps.get_version.outputs.version }}-arm64
