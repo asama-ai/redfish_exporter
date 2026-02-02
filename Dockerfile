@@ -15,8 +15,9 @@ RUN go mod download && go mod verify
 # Copy the rest of the source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o redfish_exporter 
+# Build the binary (TARGETARCH is set by Docker buildx for multi-platform builds)
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o redfish_exporter
 
 # Final stage
 FROM alpine:3.19
