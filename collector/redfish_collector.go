@@ -3,11 +3,14 @@ package collector
 import (
 	"bytes"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"crypto/tls"
-	"net/http"
 
 	"github.com/apex/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -104,15 +107,65 @@ func (r *RedfishCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(totalScrapeDurationDesc, prometheus.GaugeValue, time.Since(scrapeTime).Seconds())
 }
 
-func newRedfishClient(host string, username string, password string) (*gofish.APIClient, error) {
-	url := fmt.Sprintf("https://%s", host)
+// proxyForRequest returns a Proxy function that uses HTTP_PROXY/HTTPS_PROXY for all
+// requests when set, including localhost/loopback. Go's ProxyFromEnvironment skips
+// the proxy for loopback, so with target 127.0.0.1 no exporter traffic would go
+// through redpool; this allows the golden script (and any proxy-in-the-middle case)
+// to send all traffic through the proxy.
+func proxyForRequest() func(*http.Request) (*url.URL, error) {
+	httpProxy := strings.TrimSpace(os.Getenv("HTTP_PROXY"))
+	if httpProxy == "" {
+		httpProxy = strings.TrimSpace(os.Getenv("http_proxy"))
+	}
+	httpsProxy := strings.TrimSpace(os.Getenv("HTTPS_PROXY"))
+	if httpsProxy == "" {
+		httpsProxy = strings.TrimSpace(os.Getenv("https_proxy"))
+	}
+	if httpProxy == "" && httpsProxy == "" {
+		return http.ProxyFromEnvironment
+	}
+	var httpURL, httpsURL *url.URL
+	if httpProxy != "" {
+		httpURL, _ = url.Parse(httpProxy)
+	}
+	if httpsProxy != "" {
+		httpsURL, _ = url.Parse(httpsProxy)
+	}
+	if httpsURL == nil {
+		httpsURL = httpURL
+	}
+	if httpURL == nil {
+		httpURL = httpsURL
+	}
+	return func(req *http.Request) (*url.URL, error) {
+		if req == nil || req.URL == nil {
+			return nil, nil
+		}
+		if req.URL.Scheme == "https" && httpsURL != nil {
+			return httpsURL, nil
+		}
+		if req.URL.Scheme == "http" && httpURL != nil {
+			return httpURL, nil
+		}
+		return nil, nil
+	}
+}
 
-	// Create transport with proxy
+func newRedfishClient(host string, username string, password string) (*gofish.APIClient, error) {
+	scheme := "https"
+	if s := os.Getenv("REDFISH_SCHEME"); s == "http" {
+		scheme = "http"
+	}
+	url := fmt.Sprintf("%s://%s", scheme, host)
+
+	// Use proxy for all requests when HTTP_PROXY/HTTPS_PROXY is set, including localhost.
+	// Go's ProxyFromEnvironment skips the proxy for loopback, so target 127.0.0.1 would
+	// bypass redpool; this allows the golden script (and proxy-in-the-middle) to work.
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		Proxy: http.ProxyFromEnvironment, // Uses HTTP_PROXY, HTTPS_PROXY env vars
+		Proxy: proxyForRequest(),
 	}
 
 	config := gofish.ClientConfig{
